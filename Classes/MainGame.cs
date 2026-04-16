@@ -3,20 +3,22 @@ using System.Diagnostics;
 public sealed class MainGame
 {
     // grid/board
-    private readonly int _width;
-    private readonly int _height;
+    private int _width;
+    private int _height;
 
     // "core" game fields
-    private readonly Paddle? _leftPaddle;
-    private readonly Paddle? _rightPaddle;
-    private readonly Ball? _ball;
-    private readonly Renderer? _renderer;
-    private readonly InputHandler? _inputHandler;
+    private Paddle? _leftPaddle;
+    private Paddle? _rightPaddle;
+    private Ball? _ball;
+    private Renderer? _renderer;
+    private InputHandler? _inputHandler;
 
     // score & game state
     private int _leftSideScore;
     private int _rightSideScore;
     private bool _gameStateIsRunning;
+
+    private int _cpuDelayTick;
 
     public MainGame(int width, int height)
     {
@@ -69,6 +71,8 @@ public sealed class MainGame
 
         while (_gameStateIsRunning)
         {
+            // handle collision and properly draw the game map (in our current build: the collision is not handled when the ball falls below the X-axis)
+            EnsureConsoleIsLargeEnough();
             // get the current tick
             long currentTicks = stopWatch.ElapsedMilliseconds;
             // get the current milliseconds
@@ -100,28 +104,83 @@ public sealed class MainGame
     /// </summary>
     private void InitalizeConsole()
     {
+        _width = Math.Max(40, Console.WindowWidth);
+        _height = Math.Max(15, Console.WindowHeight - 1);
         // Clear the console feed.
         Console.Clear();
+    }
 
-        // // we are with the try/catch block below, attempting to resize the terminal UI, not all terminals support this, so the try/catch can catch exceptions where resizing is not supported.
-        // try
-        // {
-        //     if (Console.WindowWidth < _width || Console.WindowHeight < _height + 2)
-        //     {
-        //         Console.SetWindowSize(Math.Min(_width, Console.LargestWindowWidth), Math.Min(_height + 2, Console.LargestWindowHeight));
-        //         Console.WriteLine($"Setting the height and width of the terminal is only supported on Windows, software is currently running on: {Environment.OSVersion} {Environment.MachineName}");
-        //     }
+    /// <summary>
+    /// Create all the game objects and place them properly on the terminal screen
+    /// </summary>
+    private void CreateGameObjects()
+    {
+        // create the paddle objects
+        int paddleHeight = 4;
+        int centerY = _height / 2 - paddleHeight  / 2;
 
-        //     if (Console.BufferWidth < _width || Console.BufferHeight < _height + 2)
-        //     {
-        //         Console.SetBufferSize(Math.Max(_width, Console.BufferWidth), Math.Max(_height + 2, Console.BufferHeight));
-        //         Console.WriteLine($"Setting the buffer height and width of the terminal is only supported Windows, software is currently running on: {Environment.OSVersion} {Environment.MachineName}");
-        //     }
-        // }
-        // catch
-        // {
-        //     throw new InvalidProgramException("An error occured!");
-        // }
+        _leftPaddle = new Paddle(x: 2, y: centerY, height: paddleHeight);
+        _rightPaddle = new Paddle(x: _width - 3, y: centerY, height: paddleHeight);
+
+        // create the ball object
+        _ball = new Ball(
+            x: _width / 2,
+            y: _height / 2,
+            velocityX: -1,
+            velocityY: -1
+        );
+
+        _renderer = new Renderer(width: _width, height: _height);
+    }
+
+    /// <summary>
+    /// A helper method that attempts to verify if the console window is large enough for the game or not, if it is not large enough, we can let the user resize it inside the method
+    /// </summary>
+    private void EnsureConsoleIsLargeEnough()
+    {
+        // minimum height and width of the terminal screen
+        const int minimumWidth = 40;
+        const int minimumHeight = 15;
+
+        while(Console.WindowWidth < minimumWidth || Console.WindowHeight < minimumHeight + 1)
+        {
+            Console.Clear();
+            Console.SetCursorPosition(0,0);
+            Console.WriteLine("The terminal window is currently too small for Pong on this platform");
+            Console.WriteLine($"Minimum terminal size: {minimumWidth}x{minimumHeight}");
+            Console.WriteLine($"Current termimal size: {Console.WindowWidth}x{Console.WindowHeight}");
+            Console.WriteLine();
+            Console.WriteLine("Please enlarge the terminal window to continue...");
+            Console.WriteLine("Or press the Escape key to exit...");
+
+            if(Console.KeyAvailable)
+            {
+                var key = Console.ReadKey(intercept: true).Key;
+                if(key == ConsoleKey.Escape)
+                {
+                    _gameStateIsRunning = false;
+                    return;
+                }
+            }
+            Thread.Sleep(100);
+        }
+
+        int newWidth = Console.WindowWidth;
+        int newHeight = Console.WindowHeight - 1;
+
+        if(newWidth != _width || newHeight != _height)
+        {
+            _width = newWidth;
+            _height = newHeight;
+
+            CreateGameObjects();
+            Console.Clear();
+        }
+
+        if(OperatingSystem.IsWindows())
+        {
+            Console.SetWindowSize(minimumWidth, minimumHeight);
+        }
     }
 
     /// <summary>
@@ -179,11 +238,38 @@ public sealed class MainGame
     /// </summary>
     private void Update()
     {
+        UpdateEnemyCPU();
         _ball!.Move();
 
         HandleWallCollision();
         HandlePaddleCollision();
         HandleScore();
+    }
+
+    /// <summary>
+    /// Update the enemy CPU
+    /// </summary>
+    private void UpdateEnemyCPU()
+    {
+        _cpuDelayTick++;
+
+        if(_cpuDelayTick % 2 != 0)
+        {
+            return;
+        }
+
+        int paddleCenter = _rightPaddle!.Y + _rightPaddle.Height / 2;
+        int deadZone = 1;
+
+        if(_ball!.Y < paddleCenter - deadZone)
+        {
+            _rightPaddle.MoveUp(minimumYvalue: 1);
+        }
+        else if(_ball!.Y > paddleCenter + deadZone) 
+        {
+            _rightPaddle.MoveDown(maximumYvalue: _height - 2);
+        }
+
     }
 
     /// <summary>
@@ -257,11 +343,12 @@ public sealed class MainGame
         if (_ball!.X <= 0)
         {
             _rightSideScore++;
+            ResetBallPosition(ballDirectionX: -1);
         }
-
         else if (_ball!.X >= _width - 1)
         {
             _leftSideScore++;
+            ResetBallPosition(ballDirectionX: 1);
         }
     }
 
