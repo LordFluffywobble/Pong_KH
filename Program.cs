@@ -6,6 +6,7 @@ class Program
 {
     static void Main(string[] args)
     {
+
         Console.CursorVisible = false;
         Console.OutputEncoding = Encoding.UTF8;
 
@@ -20,5 +21,6 @@ class Program
             Console.ResetColor();
             Console.CursorVisible = true;
         }
+
     }
 }

@@ -38,9 +38,9 @@ public sealed class Paddle
     /// Move the Y position down
     /// </summary>
     /// <param name="maximumYvalue">maximum Y value</param>
-    public void MoveDown(int maximumYvalue)
+    public void MoveDown(int maximumXvalue)
     {
-        if (Y + Height - 1 < maximumYvalue)
+        if (Y + Height - 1 < maximumXvalue)
         {
             Y++;
         }

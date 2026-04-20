@@ -8,8 +8,11 @@
 ## Classes
 
 ### MainGame [x]
-### Paddle []
-### Renderer []
-### Ball []
-### InputHandler []
+### Paddle [x]
+### Renderer [x]
+### Ball [x]
+### InputHandler [x]
 
+## 20.04.26
+
+### Current MVP is working properly, we now add improvements for learning OOP concepts

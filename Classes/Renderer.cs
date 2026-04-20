@@ -25,7 +25,7 @@ public sealed class Renderer
     /// <param name="ball">game ball</param>
     /// <param name="rightSideScore">score for the player or cpu on the right side</param>
     /// <param name="leftSideScore">score for the player on the left side</param>
-    public void RenderGame(Paddle leftSidePaddle, Paddle rightSidePaddle, Ball ball, int rightSideScore, int leftSideScore)
+    public void RenderGame(Paddle leftSidePaddle, Paddle rightSidePaddle, Ball ball, int rightSideScore, int leftSideScore, bool isPaused)
     {
         // we first call the ClearBuffer method
         ClearBuffer();
@@ -40,7 +40,52 @@ public sealed class Renderer
         DrawBall(ball);
         // when the steps above have been ran, we draw the score for each side
         DrawGameScore(leftSideScore, rightSideScore);
+
+        if (isPaused)
+        {
+            DrawCenteredText(_height / 2, "PAUSED");
+            DrawCenteredText(_height / 2 + 1, "Press the P key to continue...");
+        }
+
         // when everything is drawn properly, we flush the buffer
+        FlushBuffer();
+    }
+
+    /// <summary>
+    /// Render the start screen
+    /// </summary>
+    /// <param name="leftSideScore">player score</param>
+    /// <param name="rightSideScore">CPU score</param>
+    public void RenderStartScreen(int leftSideScore, int rightSideScore)
+    {
+        // clear the buffer
+        ClearBuffer();
+        // draw the borders
+        DrawBorders();
+        // draw the score
+        DrawGameScore(leftSideScore, rightSideScore);
+
+        DrawCenteredText(4, "PONG");
+        DrawCenteredText(6, "Controls: W / S ArrowUp / ArrowDown");
+        DrawCenteredText(7, "Opponents paddle is controlled by the CPU");
+        DrawCenteredText(9, "Enter or Spacebar = Start");
+        DrawCenteredText(10, "P = Pause");
+        DrawCenteredText(11, "Escape = Exit");
+
+        FlushBuffer();
+    }
+
+    public void RenderGameOverScreen(int leftSideScore, int rightSideScore, string winMessage)
+    {
+        ClearBuffer();
+        DrawBorders();
+        DrawGameScore(leftSideScore, rightSideScore);
+
+        DrawCenteredText(5, "GAME OVER");
+        DrawCenteredText(7, winMessage);
+        DrawCenteredText(9, "Press the R key to restart the game");
+        DrawCenteredText(10, "Press the escape key to exit.");
+
         FlushBuffer();
     }
 
@@ -141,6 +186,28 @@ public sealed class Renderer
         {
             _buffer[0, startXposition + i] = scoreText[i];
         }
+    }
+
+    /// <summary>
+    /// Draw text centered on the terminal screen
+    /// </summary>
+    /// <param name="y">y-axis value</param>
+    /// <param name="text">text to be rendered</param>
+    private void DrawCenteredText(int y, string text)
+    {
+        if (y <= 0 || y >= _height - 1)
+        {
+            return;
+        }
+
+        // Center the text
+        int startX = Math.Max(1, (_width - text.Length) / 2);
+        // draw the text using a for loop
+        for (int i = 0; i < text.Length && startX + 1 < _width - 1; i++)
+        {
+            _buffer[y, startX + 1] = text[i];
+        }
+
     }
 
     /// <summary>

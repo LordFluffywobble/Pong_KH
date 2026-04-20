@@ -2,24 +2,38 @@ using System.Diagnostics;
 
 public sealed class MainGame
 {
+    // constant values
+    private const int MinimumWidth = 40;
+    private const int MinimumHeight = 15;
+    private const int WinningScore = 5;
+    private const int TragetFPS = 30;
+
     // grid/board
     private int _width;
     private int _height;
 
     // "core" game fields
-    private Paddle? _leftPaddle;
-    private Paddle? _rightPaddle;
-    private Ball? _ball;
-    private Renderer? _renderer;
-    private InputHandler? _inputHandler;
+    private Paddle _leftPaddle = null!;
+    private Paddle _rightPaddle = null!;
+    private Ball _ball = null!;
+    private Renderer _renderer = null!;
+    private CpuGameController _cpu = null!;
 
     // score & game state
     private int _leftSideScore;
     private int _rightSideScore;
-    private bool _gameStateIsRunning;
+    private GameState _state = GameState.StartScreen;
 
+
+    private bool _gameStateIsRunning;
     private int _cpuDelayTick;
 
+    /// <summary>
+    /// Our primary constructor
+    /// </summary>
+    /// <param name="width">game grid width</param>
+    /// <param name="height">game grid height</param>
+    /// <exception cref="ArgumentOutOfRangeException">out of bounds of the grid exception</exception>
     public MainGame(int width, int height)
     {
         if (width < 40)
@@ -44,7 +58,6 @@ public sealed class MainGame
         _ball = new Ball(width / 2, height / 2, velocityX: -1, velocityY: -1);
 
         _renderer = new Renderer(width, height);
-        _inputHandler = new InputHandler();
     }
 
     // Run the main game loop
@@ -73,6 +86,12 @@ public sealed class MainGame
         {
             // handle collision and properly draw the game map (in our current build: the collision is not handled when the ball falls below the X-axis)
             EnsureConsoleIsLargeEnough();
+
+            if (_state == GameState.Exiting)
+            {
+                break;
+            }
+
             // get the current tick
             long currentTicks = stopWatch.ElapsedMilliseconds;
             // get the current milliseconds
@@ -117,7 +136,7 @@ public sealed class MainGame
     {
         // create the paddle objects
         int paddleHeight = 4;
-        int centerY = _height / 2 - paddleHeight  / 2;
+        int centerY = _height / 2 - paddleHeight / 2;
 
         _leftPaddle = new Paddle(x: 2, y: centerY, height: paddleHeight);
         _rightPaddle = new Paddle(x: _width - 3, y: centerY, height: paddleHeight);
@@ -131,6 +150,35 @@ public sealed class MainGame
         );
 
         _renderer = new Renderer(width: _width, height: _height);
+        _cpu = new CpuGameController(updateIntervalFrames: 2, deadZone: 1);
+    }
+
+    /// <summary>
+    /// Reset the current match
+    /// </summary>
+    private void ResetMatch()
+    {
+        _leftSideScore = 0;
+        _rightSideScore = 0;
+        ResetRound(directionX: -1);
+        _state = GameState.StartScreen;
+    }
+
+    /// <summary>
+    /// Reset the current round, this method is called upon in the reset match method above
+    /// </summary>
+    /// <param name="directionX"></param>
+    private void ResetRound(int directionX)
+    {
+        _leftPaddle.Reset(_height / 2 - _leftPaddle.Height / 2);
+        _rightPaddle.Reset(_height / 2 - _rightPaddle.Height / 2);
+
+        _ball.Reset(
+            x: _width / 2,
+            y: _height / 2,
+            velocityX: directionX,
+            velocityY: 0
+        );
     }
 
     /// <summary>
@@ -142,10 +190,10 @@ public sealed class MainGame
         const int minimumWidth = 40;
         const int minimumHeight = 15;
 
-        while(Console.WindowWidth < minimumWidth || Console.WindowHeight < minimumHeight + 1)
+        while (Console.WindowWidth < minimumWidth || Console.WindowHeight < minimumHeight + 1)
         {
             Console.Clear();
-            Console.SetCursorPosition(0,0);
+            Console.SetCursorPosition(0, 0);
             Console.WriteLine("The terminal window is currently too small for Pong on this platform");
             Console.WriteLine($"Minimum terminal size: {minimumWidth}x{minimumHeight}");
             Console.WriteLine($"Current termimal size: {Console.WindowWidth}x{Console.WindowHeight}");
@@ -153,10 +201,10 @@ public sealed class MainGame
             Console.WriteLine("Please enlarge the terminal window to continue...");
             Console.WriteLine("Or press the Escape key to exit...");
 
-            if(Console.KeyAvailable)
+            if (Console.KeyAvailable)
             {
                 var key = Console.ReadKey(intercept: true).Key;
-                if(key == ConsoleKey.Escape)
+                if (key == ConsoleKey.Escape)
                 {
                     _gameStateIsRunning = false;
                     return;
@@ -168,7 +216,7 @@ public sealed class MainGame
         int newWidth = Console.WindowWidth;
         int newHeight = Console.WindowHeight - 1;
 
-        if(newWidth != _width || newHeight != _height)
+        if (newWidth != _width || newHeight != _height)
         {
             _width = newWidth;
             _height = newHeight;
@@ -177,7 +225,7 @@ public sealed class MainGame
             Console.Clear();
         }
 
-        if(OperatingSystem.IsWindows())
+        if (OperatingSystem.IsWindows())
         {
             Console.SetWindowSize(minimumWidth, minimumHeight);
         }
@@ -211,25 +259,104 @@ public sealed class MainGame
         {
             ConsoleKey key = Console.ReadKey(intercept: true).Key;
 
-            switch (key)
+            switch (_state)
             {
-                case ConsoleKey.W:
-                    _leftPaddle!.MoveUp(minimumYvalue: 1);
+                case GameState.StartScreen:
+                    HandleStartScreenInput(key);
                     break;
-                case ConsoleKey.S:
-                    _leftPaddle!.MoveDown(maximumYvalue: _height - 2);
+                case GameState.Playing:
+                    HandlePlayingInput(key);
                     break;
-                case ConsoleKey.UpArrow:
-                    _rightPaddle!.MoveUp(minimumYvalue: 1);
+                case GameState.Paused:
+                    HandleGameStateWhenGameIsPausedInput(key);
                     break;
-                case ConsoleKey.DownArrow:
-                    _rightPaddle!.MoveDown(maximumYvalue: _height - 2);
-                    break;
-                // final check, escape key
-                case ConsoleKey.Escape:
-                    _gameStateIsRunning = false;
+
+                case GameState.GameOver:
+                    HandleGameOverInput(key);
                     break;
             }
+        }
+    }
+
+    /// <summary>
+    /// This method is a helper method that handles the start screen game state interactions
+    /// </summary>
+    /// <param name="key">keyboard key</param>
+    private void HandleStartScreenInput(ConsoleKey key)
+    {
+        switch (key)
+        {
+            case ConsoleKey.Enter:
+            case ConsoleKey.Spacebar:
+                _state = GameState.Playing;
+                break;
+
+            case ConsoleKey.Escape:
+                _state = GameState.Exiting;
+                break;
+        }
+    }
+
+    /// <summary>
+    /// This method handles the player input when the player is playing the game, so it interacts with the Playing game state
+    /// </summary>
+    /// <param name="key">keyboard key</param>
+    private void HandlePlayingInput(ConsoleKey key)
+    {
+        switch (key)
+        {
+            case ConsoleKey.W:
+            case ConsoleKey.UpArrow:
+                _leftPaddle.MoveUp(minimumYvalue: 1);
+                break;
+
+            case ConsoleKey.S:
+            case ConsoleKey.DownArrow:
+                _leftPaddle.MoveDown(maximumXvalue: _height - 2);
+                break;
+
+            case ConsoleKey.P:
+                _state = GameState.Paused;
+                break;
+
+            case ConsoleKey.Escape:
+                _state = GameState.Exiting;
+                break;
+        }
+    }
+
+    /// <summary>
+    /// This methods handles all the player interactions when the game is paused, so GameState.Paused is currently a set value, this method overrides that value and resumes the game when P is pressed again
+    /// </summary>
+    /// <param name="key"></param>
+    private void HandleGameStateWhenGameIsPausedInput(ConsoleKey key)
+    {
+        switch (key)
+        {
+            case ConsoleKey.P:
+                _state = GameState.Playing;
+                break;
+
+            case ConsoleKey.Escape:
+                _state = GameState.Exiting;
+                break;
+        }
+    }
+
+    /// <summary>
+    /// This method handles the game over state
+    /// </summary>
+    /// <param name="key"></param>
+    private void HandleGameOverInput(ConsoleKey key)
+    {
+        switch (key)
+        {
+            case ConsoleKey.R:
+                ResetMatch();
+                break;
+            case ConsoleKey.Escape:
+                _state = GameState.Exiting;
+                break;
         }
     }
 
@@ -238,7 +365,12 @@ public sealed class MainGame
     /// </summary>
     private void Update()
     {
-        UpdateEnemyCPU();
+        if (_state != GameState.Playing)
+        {
+            return;
+        }
+
+        _cpu.Update(_rightPaddle, _ball, _height - 2);
         _ball!.Move();
 
         HandleWallCollision();
@@ -253,7 +385,7 @@ public sealed class MainGame
     {
         _cpuDelayTick++;
 
-        if(_cpuDelayTick % 2 != 0)
+        if (_cpuDelayTick % 2 != 0)
         {
             return;
         }
@@ -261,13 +393,13 @@ public sealed class MainGame
         int paddleCenter = _rightPaddle!.Y + _rightPaddle.Height / 2;
         int deadZone = 1;
 
-        if(_ball!.Y < paddleCenter - deadZone)
+        if (_ball!.Y < paddleCenter - deadZone)
         {
             _rightPaddle.MoveUp(minimumYvalue: 1);
         }
-        else if(_ball!.Y > paddleCenter + deadZone) 
+        else if (_ball!.Y > paddleCenter + deadZone)
         {
-            _rightPaddle.MoveDown(maximumYvalue: _height - 2);
+            _rightPaddle.MoveDown(_height - 2);
         }
 
     }
@@ -295,7 +427,7 @@ public sealed class MainGame
     private void HandlePaddleCollision()
     {
         // left side paddle
-        if (_ball!.X == _leftPaddle!.X + 1 && _ball!.Y >= _leftPaddle!.Y && _ball!.Y < _leftPaddle!.Y + _leftPaddle!.Height)
+        if (HasHitLeftPaddle())
         {
             _ball!.X = _leftPaddle!.X + 1;
             _ball!.VelocityX = 1;
@@ -303,12 +435,22 @@ public sealed class MainGame
         }
 
         // right side paddle
-        if (_ball!.X == _rightPaddle!.X - 1 && _ball!.Y >= _rightPaddle!.Y && _ball!.Y < _rightPaddle!.Y + _rightPaddle!.Height)
+        if (HasHitRightPaddle())
         {
             _ball!.X = _rightPaddle!.X - 1;
             _ball!.VelocityX = -1;
             _ball!.VelocityY = CalculateBounceDirection(_rightPaddle, _ball);
         }
+    }
+
+    private bool HasHitLeftPaddle()
+    {
+        return _ball.X == _leftPaddle.X + 1 && _ball.Y >= _leftPaddle.Y && _ball.Y < _leftPaddle.Y + _leftPaddle.Height;
+    }
+
+    private bool HasHitRightPaddle()
+    {
+        return _ball.X == _rightPaddle.X - 1 && _ball.Y >= _rightPaddle.Y && _ball.Y < _rightPaddle.Y + _rightPaddle.Height;
     }
 
     /// <summary>
@@ -343,12 +485,26 @@ public sealed class MainGame
         if (_ball!.X <= 0)
         {
             _rightSideScore++;
-            ResetBallPosition(ballDirectionX: -1);
+
+            if (_rightSideScore >= WinningScore)
+            {
+                _state = GameState.GameOver;
+                return;
+            }
+
+            ResetRound(directionX: -1);
+            Thread.Sleep(500);
         }
         else if (_ball!.X >= _width - 1)
         {
             _leftSideScore++;
-            ResetBallPosition(ballDirectionX: 1);
+            if (_leftSideScore >= WinningScore)
+            {
+                _state = GameState.GameOver;
+                return;
+            }
+            ResetRound(directionX: 1);
+            Thread.Sleep(500);
         }
     }
 
@@ -374,12 +530,20 @@ public sealed class MainGame
 
     private void Render()
     {
-        _renderer!.RenderGame(
-            leftSidePaddle: _leftPaddle!,
-            rightSidePaddle: _rightPaddle!,
-            ball: _ball!,
-            leftSideScore: _leftSideScore,
-            rightSideScore: _rightSideScore
-        );
+        switch (_state)
+        {
+            case GameState.StartScreen:
+                _renderer.RenderStartScreen(_leftSideScore, _rightSideScore);
+                break;
+            case GameState.Playing:
+                _renderer.RenderGame(_leftPaddle, _rightPaddle, _ball, _rightSideScore, _leftSideScore, isPaused: false);
+                break;
+            case GameState.Paused:
+                _renderer.RenderGame(_leftPaddle, _rightPaddle, _ball, _rightSideScore, _leftSideScore, isPaused: true);
+                break;
+            case GameState.GameOver:
+                _renderer.RenderGameOverScreen(_leftSideScore, _rightSideScore, _leftSideScore > _rightSideScore ? "You won!" : "CPU won");
+                break;
+        }
     }
 }
